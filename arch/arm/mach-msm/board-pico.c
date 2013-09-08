@@ -49,9 +49,7 @@
 #include <linux/power_supply.h>
 #include <linux/regulator/consumer.h>
 #include <mach/rpc_pmapp.h>
-#ifdef CONFIG_BATTERY_MSM
 #include <mach/msm_battery.h>
-#endif
 #include <mach/htc_headset_mgr.h>
 #include <mach/htc_headset_gpio.h>
 #include <mach/htc_headset_pmic.h>
@@ -75,9 +73,9 @@
 #include "board-pico.h"
 #include <mach/board_htc.h>
 #include <linux/htc_touch.h>
+#include <linux/htc_flashlight.h>
 #include <linux/proc_fs.h>
 #include <linux/leds-pm8029.h>
-#include <linux/msm_audio.h>
 
 #ifdef CONFIG_CODEC_AIC3254
 #include <linux/i2c/aic3254.h>
@@ -90,12 +88,12 @@
 #include <mach/htc_util.h>
 
 #include <mach/cable_detect.h>
+
+#include <linux/ion.h>
+
 int htc_get_usb_accessory_adc_level(uint32_t *buffer);
 
 static int config_gpio_table(uint32_t *table, int len);
-
-#define PMEM_KERNEL_EBI1_SIZE	0x3A000
-#define MSM_PMEM_AUDIO_SIZE	0x1200000
 
 enum {
 	GPIO_EXPANDER_IRQ_BASE	= NR_MSM_IRQS + NR_GPIO_IRQS,
@@ -266,6 +264,40 @@ static struct platform_device htc_headset_mgr = {
 };
 
 /* HEADSET DRIVER END */
+
+#ifdef CONFIG_FLASHLIGHT_TPS61310
+static void config_flashlight_gpios(void)
+{
+	static uint32_t flashlight_gpio_table[] = {
+		GPIO_CFG(30, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA),
+		GPIO_CFG(26, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA),
+		GPIO_CFG(115, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA),
+	};
+
+	gpio_tlmm_config(flashlight_gpio_table[0], GPIO_CFG_ENABLE);
+	gpio_tlmm_config(flashlight_gpio_table[1], GPIO_CFG_ENABLE);
+	gpio_tlmm_config(flashlight_gpio_table[2], GPIO_CFG_ENABLE);
+
+	gpio_direction_output(30, 1);
+	gpio_direction_output(26, 0);
+	gpio_direction_output(115, 0);
+}
+
+static struct TPS61310_flashlight_platform_data tps61310_pdata = {
+	.gpio_init = config_flashlight_gpios,
+	.tps61310_strb0 = 26,
+	.tps61310_strb1 = 115,
+	/*.led_count = 1,*/
+	.flash_duration_ms = 600,
+};
+
+static struct i2c_board_info tps61310_i2c_info[] = {
+	{
+		I2C_BOARD_INFO("TPS61310_FLASHLIGHT", 0x66 >> 1),
+		.platform_data = &tps61310_pdata,
+	},
+};
+#endif
 
 struct platform_device htc_drm = {
 	.name = "htcdrm",
@@ -1014,6 +1046,8 @@ static struct i2c_board_info i2c_aic3254_devices[] = {
 	},
 };
 #endif
+
+#if 0
 static struct android_pmem_platform_data android_pmem_adsp_pdata = {
 	.name = "pmem_adsp",
 	.allocator_type = PMEM_ALLOCATORTYPE_BITMAP,
@@ -1044,6 +1078,7 @@ static int __init pmem_adsp_size_setup(char *p)
 }
 
 early_param("pmem_adsp_size", pmem_adsp_size_setup);
+#endif
 
 #define SND(desc, num) { .name = #desc, .id = num }
 static struct snd_endpoint snd_endpoints_list[] = {
@@ -1145,8 +1180,7 @@ static unsigned int dec_concurrency_table[] = {
 	(DEC4_FORMAT),
 
 	/* Concurrency 6 */
-	(DEC0_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|
-			(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC0_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
 	0, 0, 0, 0,
 
 	/* Concurrency 7 */
@@ -1185,6 +1219,7 @@ static struct platform_device msm_device_adspdec = {
 	},
 };
 
+#if 0
 static struct android_pmem_platform_data android_pmem_audio_pdata = {
 	.name = "pmem_audio",
 	.allocator_type = PMEM_ALLOCATORTYPE_BITMAP,
@@ -1209,8 +1244,8 @@ static struct platform_device android_pmem_device = {
 	.id = 0,
 	.dev = { .platform_data = &android_pmem_pdata },
 };
+#endif
 
-#ifdef CONFIG_BATTERY_MSM
 static u32 msm_calculate_batt_capacity(u32 current_voltage);
 
 static struct msm_psy_batt_pdata msm_psy_batt_data = {
@@ -1235,7 +1270,6 @@ static struct platform_device msm_batt_device = {
 	.id                 = -1,
 	.dev.platform_data  = &msm_psy_batt_data,
 };
-#endif
 
 #ifdef CONFIG_MSM_CAMERA
 static uint32_t camera_off_gpio_table[] = {
@@ -1259,6 +1293,14 @@ static uint32_t camera_on_gpio_table[] = {
 	GPIO_CFG(PICO_GPIO_CAMERA_MCLK,      1, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_16MA),
 // HTC_END
 };
+
+#ifdef CONFIG_MSM_CAMERA_FLASH
+static struct msm_camera_sensor_flash_src msm_flash_src = {
+	.flash_sr_type = MSM_CAMERA_FLASH_SRC_CURRENT_DRIVER,
+	._fsrc.current_driver_src.led1 = GPIO_SURF_CAM_GP_LED_EN1,
+	._fsrc.current_driver_src.led2 = GPIO_SURF_CAM_GP_LED_EN2,
+};
+#endif
 
 //HTC_START
 //For pico camera power control
@@ -1377,6 +1419,7 @@ static void pico_camera_vreg_config(int vreg_en)
 
 }
 //HTC_END
+
 
 static struct vreg *vreg_gp2;
 static struct vreg *vreg_gp3;
@@ -1543,6 +1586,9 @@ static struct msm_camera_sensor_platform_info mt9t013_sensor_7627a_info = {
 // PG-POWER_SEQ-00-{
 static struct msm_camera_sensor_flash_data flash_mt9t013 = {
 	.flash_type = MSM_CAMERA_FLASH_NONE,
+#ifdef CONFIG_MSM_CAMERA_FLASH
+	.flash_src  = &msm_flash_src
+#endif
 };
 // PG-POWER_SEQ-00-}
 static struct msm_camera_sensor_info msm_camera_sensor_mt9t013_data = {
@@ -1593,6 +1639,8 @@ static struct platform_device ram_console_device = {
 	.resource       = ram_console_resources,
 };
 
+static struct platform_device ion_dev;
+
 static struct platform_device *pico_devices[] __initdata = {
 	&ram_console_device,
 	&msm_device_dmov,
@@ -1604,14 +1652,14 @@ static struct platform_device *pico_devices[] __initdata = {
 	&msm_gsbi1_qup_i2c_device,
 	&htc_battery_pdev,
 	&msm_device_otg,
+#if 0
 	&android_pmem_device,
 	&android_pmem_adsp_device,
 	&android_pmem_audio_device,
+#endif
 	&msm_device_snd,
 	&msm_device_adspdec,
-#ifdef CONFIG_BATTERY_MSM
 	&msm_batt_device,
-#endif
 	&htc_headset_mgr,
 	&htc_drm,
 	&msm_kgsl_3d0,
@@ -1625,8 +1673,93 @@ static struct platform_device *pico_devices[] __initdata = {
 #endif
 	&cable_detect_device,
 	&pm8029_leds,
+#ifdef CONFIG_ION_MSM
+	&ion_dev,
+#endif
 };
 
+#ifdef CONFIG_ION_MSM
+#ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
+#define MSM_ION_HEAP_NUM        4
+#else
+#define MSM_ION_HEAP_NUM        1
+#endif
+
+#define MSM_ION_CAMERA_SIZE		0x2800000
+#define MSM_ION_SF_SIZE			0x2000000
+#define MSM_ION_AUDIO_SIZE		0x700000
+
+#ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
+static struct ion_co_heap_pdata co_ion_pdata = {
+	.adjacent_mem_id = INVALID_HEAP_ID,
+	.align = PAGE_SIZE,
+};
+#endif
+
+static struct ion_platform_data ion_pdata = {
+	.nr = MSM_ION_HEAP_NUM,
+	.heaps = {
+		{
+			.id	= ION_SYSTEM_HEAP_ID,
+			.type	= ION_HEAP_TYPE_SYSTEM,
+			.name	= ION_VMALLOC_HEAP_NAME,
+		},
+#ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
+		{
+			.id	= ION_CAMERA_HEAP_ID,
+			.type	= ION_HEAP_TYPE_CARVEOUT,
+			.name	= ION_CAMERA_HEAP_NAME,
+			.size	= MSM_ION_CAMERA_SIZE,
+			.memory_type = ION_EBI_TYPE,
+			.extra_data = &co_ion_pdata,
+		},
+		{
+			.id	= ION_AUDIO_HEAP_ID,
+			.type	= ION_HEAP_TYPE_CARVEOUT,
+			.name	= ION_AUDIO_HEAP_NAME,
+			.size	= MSM_ION_AUDIO_SIZE,
+			.memory_type = ION_EBI_TYPE,
+			.extra_data = (void *) &co_ion_pdata,
+		},
+		{
+			.id	= ION_SF_HEAP_ID,
+			.type	= ION_HEAP_TYPE_CARVEOUT,
+			.name	= ION_SF_HEAP_NAME,
+			.size	= MSM_ION_SF_SIZE,
+			.memory_type = ION_EBI_TYPE,
+			.extra_data = &co_ion_pdata,
+		},
+#endif
+	}
+};
+
+static struct platform_device ion_dev = {
+	.name = "ion-msm",
+	.id = 1,
+	.dev = { .platform_data = &ion_pdata },
+};
+
+static struct memtype_reserve msm7x27a_reserve_table[] __initdata = {
+	[MEMTYPE_SMI] = {
+	},
+	[MEMTYPE_EBI0] = {
+		.flags	=	MEMTYPE_FLAGS_1M_ALIGN,
+	},
+	[MEMTYPE_EBI1] = {
+		.flags	=	MEMTYPE_FLAGS_1M_ALIGN,
+	},
+};
+
+static void __init reserve_ion_memory(void) {
+#ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
+	msm7x27a_reserve_table[MEMTYPE_EBI1].size += MSM_ION_CAMERA_SIZE;
+	msm7x27a_reserve_table[MEMTYPE_EBI1].size += MSM_ION_AUDIO_SIZE;
+	msm7x27a_reserve_table[MEMTYPE_EBI1].size += MSM_ION_SF_SIZE;
+#endif
+}
+#endif
+
+#if 0
 static unsigned pmem_kernel_ebi1_size = PMEM_KERNEL_EBI1_SIZE;
 static int __init pmem_kernel_ebi1_size_setup(char *p)
 {
@@ -1683,9 +1816,18 @@ static void __init msm7x27a_calculate_reserve_sizes(void)
 	size_pmem_devices();
 	reserve_pmem_memory();
 }
+#endif
+
+static void __init msm7x27a_calculate_reserve_sizes(void)
+{
+#ifdef CONFIG_ION_MSM
+	reserve_ion_memory();
+#endif
+}
 
 static int msm7x27a_paddr_to_memtype(unsigned int paddr)
 {
+	printk("paddr=0x%x\n", paddr);
 	return MEMTYPE_EBI1;
 }
 
@@ -2578,6 +2720,12 @@ static void __init pico_init(void)
 	i2c_register_board_info(MSM_GSBI1_QUP_I2C_BUS_ID,
 			i2c_tps65200_devices, ARRAY_SIZE(i2c_tps65200_devices));
 
+#ifdef CONFIG_FLASHLIGHT_TPS61310
+	i2c_register_board_info(MSM_GSBI1_QUP_I2C_BUS_ID,
+				tps61310_i2c_info,
+				ARRAY_SIZE(tps61310_i2c_info));
+#endif
+
 	i2c_register_board_info(MSM_GSBI1_QUP_I2C_BUS_ID,
 		atmel_ts_i2c_info,
 		ARRAY_SIZE(atmel_ts_i2c_info));
@@ -2624,9 +2772,7 @@ static void __init pico_init(void)
 
 
 	pico_init_keypad();
-#ifdef CONFIG_MSM_RPC_VIBRATOR
 	msm_init_pmic_vibrator();
-#endif
 
 	if (get_kernel_flag() & KERNEL_FLAG_PM_MONITOR) {
 		htc_monitor_init();
