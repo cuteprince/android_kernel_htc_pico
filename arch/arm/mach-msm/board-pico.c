@@ -49,7 +49,9 @@
 #include <linux/power_supply.h>
 #include <linux/regulator/consumer.h>
 #include <mach/rpc_pmapp.h>
+#ifdef CONFIG_BATTERY_MSM 
 #include <mach/msm_battery.h>
+#endif 
 #include <mach/htc_headset_mgr.h>
 #include <mach/htc_headset_gpio.h>
 #include <mach/htc_headset_pmic.h>
@@ -1246,6 +1248,7 @@ static struct platform_device android_pmem_device = {
 };
 #endif
 
+#ifdef CONFIG_BATTERY_MSM 
 static u32 msm_calculate_batt_capacity(u32 current_voltage);
 
 static struct msm_psy_batt_pdata msm_psy_batt_data = {
@@ -1270,6 +1273,7 @@ static struct platform_device msm_batt_device = {
 	.id                 = -1,
 	.dev.platform_data  = &msm_psy_batt_data,
 };
+#endif 
 
 #ifdef CONFIG_MSM_CAMERA
 static uint32_t camera_off_gpio_table[] = {
@@ -1659,7 +1663,9 @@ static struct platform_device *pico_devices[] __initdata = {
 #endif
 	&msm_device_snd,
 	&msm_device_adspdec,
+#ifdef CONFIG_BATTERY_MSM 
 	&msm_batt_device,
+#endif
 	&htc_headset_mgr,
 	&htc_drm,
 	&msm_kgsl_3d0,
